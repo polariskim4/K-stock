@@ -6,16 +6,16 @@ import pandas as pd
 st.set_page_config(layout="wide", page_title="주식 분석 대시보드")
 st.title("📈 주식 벤치마크 & 분석 도구")
 
-# 1. 벤치마크 종목 설정 (코스피 .KS / 코스닥 .KQ 구분)
+# 1. 벤치마크 종목 설정
 bench_tickers = {
     "삼성전자": "005930.KS",
     "SK하이닉스": "000660.KS",
     "현대자동차": "005380.KS",
     "두산에너빌리티": "034020.KS",
-    "대한광통신": "010170.KQ"  # 코스닥 종목은 .KQ
+    "대한광통신": "010170.KQ"
 }
 
-# 금액을 조, 억 단위로 보기 좋게 변환하는 함수
+# 금액 변환 함수 (조, 억)
 def format_currency(val):
     if val is None or pd.isna(val) or val == 0: return "-"
     val = int(val)
@@ -25,7 +25,7 @@ def format_currency(val):
         return f"{cho}조 {eok}억" if eok > 0 else f"{cho}조"
     return f"{eok}억"
 
-# 비율 데이터를 소수점 한 자리로 변환하는 함수
+# 비율 변환 함수 (소수점 한 자리)
 def format_ratio(val, is_percent=False):
     if val is None or pd.isna(val): return "-"
     if is_percent:
@@ -36,26 +36,22 @@ def get_stock_info(ticker_symbol):
     try:
         stock = yf.Ticker(ticker_symbol)
         info = stock.info
-        
-        # 기본 금액 단위: 억 (yfinance는 원 단위 제공하므로 1억으로 나눔)
         to_eok = lambda x: round(x / 100_000_000) if x else None
 
-        data = {
+        return {
             "시총": to_eok(info.get("marketCap")),
             "P/E": info.get("forwardPE") or info.get("trailingPE"),
-            "PBR": info.get("priceToBook"),
             "PEG": info.get("pegRatio"),
             "매출액": to_eok(info.get("totalRevenue")),
-            "영업이익": to_eok(info.get("operatingCashflow")), # 영업이익 대용
+            "영업이익": to_eok(info.get("operatingCashflow")),
             "마진": info.get("operatingMargins"),
             "매출액 성장률": info.get("revenueGrowth"),
             "이익 성장률": info.get("earningsGrowth"),
         }
-        return data
     except:
         return None
 
-# --- SECTION 1: 벤치마크 ---
+# --- 1. 벤치마크 섹션 ---
 st.header("📋 주요 종목 벤치마크")
 if st.button('데이터 새로고침'):
     bench_data = []
@@ -67,12 +63,9 @@ if st.button('데이터 새로고침'):
     
     if bench_data:
         df = pd.DataFrame(bench_data).set_index('종목명')
-        
-        # 가공된 데이터프레임 생성
         display_df = pd.DataFrame(index=df.index)
         display_df['시총'] = df['시총'].apply(format_currency)
         display_df['P/E'] = df['P/E'].apply(lambda x: format_ratio(x))
-        display_df['PBR'] = df['PBR'].apply(lambda x: format_ratio(x))
         display_df['PEG'] = df['PEG'].apply(lambda x: format_ratio(x))
         display_df['매출액'] = df['매출액'].apply(format_currency)
         display_df['영업이익'] = df['영업이익'].apply(format_currency)
@@ -81,28 +74,24 @@ if st.button('데이터 새로고침'):
         display_df['이익 성장률(%)'] = df['이익 성장률'].apply(lambda x: format_ratio(x, True))
         
         st.table(display_df)
-    else:
-        st.error("데이터를 불러오지 못했습니다.")
 
 st.write("---")
 
-# --- SECTION 2: 개별 종목 조회 ---
+# --- 2. 개별 종목 상세 조회 ---
 st.header("🔍 개별 종목 상세 조회")
-user_input = st.text_input("종목 코드 6자리를 입력하세요 (예: 005930)", "005930")
+user_input = st.text_input("종목 코드 6자리를 입력하세요", "005930")
 
 if user_input:
-    col1, col2 = st.columns([1, 1.5])
+    col1, col2 = st.columns([1, 1])
     
     with col1:
         st.subheader("📊 핵심 지표")
-        # 티커 자동 보정 (대부분 코스피이므로 .KS 우선 시도)
         raw_detail = get_stock_info(f"{user_input}.KS") or get_stock_info(f"{user_input}.KQ")
         
         if raw_detail:
             detail_formatted = {
                 "시총": format_currency(raw_detail['시총']),
                 "P/E": format_ratio(raw_detail['P/E']),
-                "PBR": format_ratio(raw_detail['PBR']),
                 "PEG": format_ratio(raw_detail['PEG']),
                 "매출액": format_currency(raw_detail['매출액']),
                 "영업이익": format_currency(raw_detail['영업이익']),
@@ -112,17 +101,19 @@ if user_input:
             }
             st.table(pd.Series(detail_formatted).to_frame(name="수치"))
         else:
-            st.warning("종목 정보를 가져올 수 없습니다.")
+            st.warning("데이터를 가져올 수 없습니다.")
             
     with col2:
-        st.subheader("📅 네이버 월봉 차트")
-        # HTML 태그를 사용하여 브라우저가 직접 이미지를 로드하게 함 (서버 차단 우회)
-        chart_url = f"https://ssl.pstatic.net/imgstock/chart3/mobile/candle/month/{user_input}.png"
+        st.subheader("🔗 네이버 증권 링크")
+        naver_url = f"https://finance.naver.com/item/main.naver?code={user_input}"
         
-        html_code = f"""
-            <div style="text-align: center; background-color: white; padding: 10px; border-radius: 10px;">
-                <img src="{chart_url}" style="width: 100%; max-width: 700px; border: 1px solid #eee;">
-                <p style="color: #666; font-size: 13px; margin-top: 10px;">※ 네이버 증권 제공 월봉 데이터</p>
-            </div>
-        """
-        st.components.v1.html(html_code, height=450)
+        st.write("이미지 차트 대신 안전한 공식 사이트 링크를 제공합니다.")
+        # 버튼 스타일의 링크 생성
+        st.markdown(f"""
+            <a href="{naver_url}" target="_blank" style="text-decoration: none;">
+                <div style="background-color: #03C75A; color: white; padding: 15px; border-radius: 8px; text-align: center; font-weight: bold; font-size: 18px;">
+                    네이버 증권에서 월봉 차트 보기 ↗
+                </div>
+            </a>
+        """, unsafe_allow_html=True)
+        st.info("위 버튼을 클릭하면 새 창에서 해당 종목의 상세 차트 페이지가 열립니다.")
