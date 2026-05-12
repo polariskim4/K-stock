@@ -7,29 +7,45 @@ import FinanceDataReader as fdr
 st.set_page_config(layout="wide", page_title="주식 분석 대시보드")
 st.title("📈 주식 벤치마크 & 분석 도구")
 
-# --- 종목 리스트 로드 (캐싱) ---
+# --- 종목 리스트 로드 (에러 방지 강화) ---
 @st.cache_data(show_spinner=False)
 def get_reliable_stock_list():
+    """KRX 서버 응답 실패에 대비한 3단계 방어 로직"""
+    df = pd.DataFrame()
+    
+    # 1단계: 통합 KRX 리스트 시도
     try:
-        ks = fdr.StockListing('KOSPI')
-        kq = fdr.StockListing('KOSDAQ')
-        df = pd.concat([ks, kq], ignore_index=True)
-    except:
         df = fdr.StockListing('KRX')
-    df['SearchName'] = df['Name'].str.replace(r'\s+', '', regex=True).str.upper()
-    return df[['Symbol', 'Name', 'SearchName']]
+    except Exception as e:
+        # 2단계: 코스피/코스닥 개별 호출 시도
+        try:
+            ks = fdr.StockListing('KOSPI')
+            kq = fdr.StockListing('KOSDAQ')
+            df = pd.concat([ks, kq], ignore_index=True)
+        except:
+            # 3단계: 모든 API 실패 시 앱 중단을 막기 위한 최소한의 비상용 데이터
+            st.warning("거래소 서버 연결이 원활하지 않아 일부 종목 검색이 제한될 수 있습니다.")
+            df = pd.DataFrame([
+                {"Symbol": "005930", "Name": "삼성전자"},
+                {"Symbol": "000660", "Name": "SK하이닉스"},
+                {"Symbol": "010170", "Name": "대한광통신"},
+                {"Symbol": "196170", "Name": "알테오젠"}
+            ])
 
+    if not df.empty:
+        # 검색 정확도를 위해 공백 제거 및 대문자화
+        df['SearchName'] = df['Name'].str.replace(r'\s+', '', regex=True).str.upper()
+    return df
+
+# 데이터 로드 (에러가 나도 빈 객체를 반환하여 다음 코드 실행 보장)
 total_list = get_reliable_stock_list()
 
-# --- [핵심] 자릿수를 맞춰주는 포맷팅 함수 ---
+# --- 자릿수 정렬 포맷팅 함수 ---
 def format_currency(val):
     if val is None or pd.isna(val) or val == 0: return "-"
     val = int(val)
     cho, eok = val // 10000, val % 10000
-    
     if cho > 0:
-        # 억 단위가 4자리가 되도록 앞을 0으로 채움 (예: 712 -> 0712)
-        # 이렇게 하면 '조'와 '억' 사이의 위치가 모든 행에서 일치합니다.
         return f"{cho:,.0f}조 {str(eok).zfill(4)}억"
     return f"{eok:,.0f}억"
 
@@ -41,6 +57,7 @@ def format_number(val, is_percent=False):
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_stock_info(ticker_symbol):
     if not ticker_symbol: return None
+    # yfinance는 KRX 서버와 별개이므로 작동 확률이 높음
     for suffix in [".KS", ".KQ"]:
         try:
             stock = yf.Ticker(ticker_symbol + suffix)
@@ -71,7 +88,7 @@ bench_tickers = {
 }
 
 bench_results = []
-with st.spinner("데이터를 로드 중입니다..."):
+with st.spinner("야후 파이낸스에서 데이터를 가져오는 중..."):
     for name, code in bench_tickers.items():
         res = get_stock_info(code)
         if res:
@@ -82,11 +99,9 @@ if bench_results:
     df_bench = pd.DataFrame(bench_results).set_index('종목명')
     disp_df = pd.DataFrame(index=df_bench.index)
     
-    # 자릿수 정렬이 적용된 포맷팅
     disp_df['시총'] = df_bench['시총'].apply(format_currency)
     disp_df['매출액'] = df_bench['매출액'].apply(format_currency)
     disp_df['영업이익'] = df_bench['영업이익'].apply(format_currency)
-    
     disp_df['P/E'] = df_bench['P/E'].apply(lambda x: format_number(x))
     disp_df['PEG'] = df_bench['PEG'].apply(lambda x: format_number(x))
     disp_df['마진(%)'] = df_bench['마진'].apply(lambda x: format_number(x, True))
@@ -111,7 +126,7 @@ if user_input:
     
     if clean_input.isdigit() and len(clean_input) == 6:
         target_code = clean_input
-    else:
+    elif not total_list.empty:
         match = total_list[total_list['SearchName'] == clean_input]
         if not match.empty:
             target_code = match.iloc[0]['Symbol']
@@ -133,9 +148,9 @@ if user_input:
                     "매출액 성장률(%)": format_number(raw_detail['매출액 성장률'], True),
                     "이익 성장률(%)": format_number(raw_detail['이익 성장률'], True),
                 }
-                st.dataframe(pd.Series(detail_data).to_frame(name="수치"), use_container_width=True)
-            else:
-                st.error("데이터 로드 실패.")
+                st.dataframe(pd.Series(detail_data).to_frame(name="수치"), 
+                             column_config={"수치": st.column_config.Column(alignment="right")},
+                             use_container_width=True)
         with col2:
             st.subheader("🔗 링크")
-            st.link_button(f"{user_input} 네이버 증권", f"https://finance.naver.com/item/main.naver?code={target_code}")
+            st.link_button(f"{user_input} 네이버 증권 ↗", f"https://finance.naver.com/item/main.naver?code={target_code}")
