@@ -15,7 +15,6 @@ def get_krx_list():
         df = fdr.StockListing('KRX')
         return df[['Symbol', 'Name']]
     except:
-        # 실패 시 비상용 최소 리스트 반환
         return pd.DataFrame([
             {"Symbol": "005930", "Name": "삼성전자"},
             {"Symbol": "000660", "Name": "SK하이닉스"},
@@ -47,17 +46,13 @@ def format_number(val, is_percent=False):
         return f"{round(val * 100, 1):,}%"
     return f"{round(val, 1):,}"
 
-# 데이터 가져오기 (재시도 로직 추가)
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_stock_info(ticker_symbol):
     if not ticker_symbol: return None
-    
-    # 코스피/코스닥 순차적 시도
     for suffix in [".KS", ".KQ"]:
         full_ticker = ticker_symbol + suffix
         try:
             stock = yf.Ticker(full_ticker)
-            # info 로딩 시 타임아웃 대비 재시도 (최대 2회)
             for _ in range(2):
                 info = stock.info
                 if info and 'marketCap' in info:
@@ -70,10 +65,9 @@ def get_stock_info(ticker_symbol):
                         "영업이익": to_eok(info.get("operatingCashflow")),
                         "마진": info.get("operatingMargins"),
                         "매출액 성장률": info.get("revenueGrowth"),
-                        "이익 성장률": info.get("earningsGrowth"),
-                        "symbol": ticker_symbol
+                        "이익 성장률": info.get("earningsGrowth")
                     }
-                time.sleep(0.5) # 짧은 대기 후 재시도
+                time.sleep(0.5)
         except:
             continue
     return None
@@ -81,7 +75,6 @@ def get_stock_info(ticker_symbol):
 # --- 1. 벤치마크 (자동 로드) ---
 st.header("📋 주요 종목 벤치마크")
 
-# 벤치마크는 캐싱된 데이터를 사용하여 속도 우선
 bench_results = []
 for name, code in bench_tickers.items():
     res = get_stock_info(code)
@@ -92,16 +85,25 @@ for name, code in bench_tickers.items():
 if bench_results:
     df_bench = pd.DataFrame(bench_results).set_index('종목명')
     disp_df = pd.DataFrame(index=df_bench.index)
-    for col, func in [('시총', format_currency), ('P/E', format_number), ('PEG', format_number), 
-                      ('매출액', format_currency), ('영업이익', format_currency)]:
-        disp_df[col] = df_bench[col.split('(')[0]].apply(func)
     
+    # 데이터 포맷팅
+    disp_df['시총'] = df_bench['시총'].apply(format_currency)
+    disp_df['P/E'] = df_bench['P/E'].apply(lambda x: format_number(x))
+    disp_df['PEG'] = df_bench['PEG'].apply(lambda x: format_number(x))
+    disp_df['매출액'] = df_bench['매출액'].apply(format_currency)
+    disp_df['영업이익'] = df_bench['영업이익'].apply(format_currency)
     disp_df['마진(%)'] = df_bench['마진'].apply(lambda x: format_number(x, True))
     disp_df['매출액 성장률(%)'] = df_bench['매출액 성장률'].apply(lambda x: format_number(x, True))
     disp_df['이익 성장률(%)'] = df_bench['이익 성장률'].apply(lambda x: format_number(x, True))
-    st.table(disp_df)
+    
+    # [핵심] image_8d0983.png 스타일 적용: 모든 컬럼을 오른쪽 정렬로 설정
+    st.dataframe(
+        disp_df,
+        column_config={col: st.column_config.Column(alignment="right") for col in disp_df.columns},
+        use_container_width=True
+    )
 else:
-    st.warning("현재 야후 파이낸스 서버 연결이 원활하지 않습니다. 아래 상세 조회의 '네이버 증권 바로가기'를 이용해 주세요.")
+    st.warning("데이터를 불러올 수 없습니다.")
 
 st.write("---")
 
@@ -111,7 +113,6 @@ user_input = st.text_input("종목명 또는 코드 6자리를 입력하세요",
 
 if user_input:
     target_code = None
-    # 코드 매칭 로직
     if user_input.isdigit() and len(user_input) == 6:
         target_code = user_input
     else:
@@ -124,14 +125,12 @@ if user_input:
 
     if target_code:
         col1, col2 = st.columns([1, 1])
-        # 상세 데이터 로딩
-        with st.spinner(f"'{user_input}' 데이터를 가져오고 있습니다..."):
-            raw_detail = get_stock_info(target_code)
+        raw_detail = get_stock_info(target_code)
         
         with col1:
             st.subheader("📊 핵심 지표")
             if raw_detail:
-                detail_formatted = {
+                detail_data = {
                     "시총": format_currency(raw_detail['시총']),
                     "P/E": format_number(raw_detail['P/E']),
                     "PEG": format_number(raw_detail['PEG']),
@@ -141,19 +140,23 @@ if user_input:
                     "매출액 성장률(%)": format_number(raw_detail['매출액 성장률'], True),
                     "이익 성장률(%)": format_number(raw_detail['이익 성장률'], True),
                 }
-                st.table(pd.Series(detail_formatted).to_frame(name="수치"))
+                detail_df = pd.Series(detail_data).to_frame(name="수치")
+                # 개별 지표 표도 오른쪽 정렬 적용
+                st.dataframe(
+                    detail_df,
+                    column_config={"수치": st.column_config.Column(alignment="right")},
+                    use_container_width=True
+                )
             else:
-                st.error("야후 서버에서 데이터를 가져올 수 없습니다. 아래 초록색 버튼을 눌러 네이버 증권에서 확인해 보세요.")
+                st.error("데이터 로딩 실패")
                 
         with col2:
             st.subheader("🔗 네이버 증권 바로가기")
             naver_url = f"https://finance.naver.com/item/main.naver?code={target_code}"
             st.markdown(f"""
                 <a href="{naver_url}" target="_blank" style="text-decoration: none;">
-                    <div style="background-color: #03C75A; color: white; padding: 25px; border-radius: 12px; text-align: center; font-weight: bold; font-size: 20px; border: 2px solid #02a84c;">
-                        {user_input} ({target_code})<br>실시간 차트 및 투자 정보 보기 ↗
+                    <div style="background-color: #03C75A; color: white; padding: 25px; border-radius: 12px; text-align: center; font-weight: bold; font-size: 20px;">
+                        {user_input} ({target_code}) 상세 페이지 열기 ↗
                     </div>
                 </a>
             """, unsafe_allow_html=True)
-    else:
-        st.error(f"'{user_input}' 종목을 찾을 수 없습니다. 정확한 이름을 입력해 주세요.")
