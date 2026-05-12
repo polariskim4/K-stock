@@ -10,34 +10,24 @@ st.title("📈 주식 벤치마크 & 분석 도구")
 # --- 종목 리스트 로드 (에러 방지 강화) ---
 @st.cache_data(show_spinner=False)
 def get_reliable_stock_list():
-    """KRX 서버 응답 실패에 대비한 3단계 방어 로직"""
     df = pd.DataFrame()
-    
-    # 1단계: 통합 KRX 리스트 시도
     try:
         df = fdr.StockListing('KRX')
-    except Exception as e:
-        # 2단계: 코스피/코스닥 개별 호출 시도
+    except Exception:
         try:
             ks = fdr.StockListing('KOSPI')
             kq = fdr.StockListing('KOSDAQ')
             df = pd.concat([ks, kq], ignore_index=True)
         except:
-            # 3단계: 모든 API 실패 시 앱 중단을 막기 위한 최소한의 비상용 데이터
-            st.warning("거래소 서버 연결이 원활하지 않아 일부 종목 검색이 제한될 수 있습니다.")
             df = pd.DataFrame([
                 {"Symbol": "005930", "Name": "삼성전자"},
                 {"Symbol": "000660", "Name": "SK하이닉스"},
-                {"Symbol": "010170", "Name": "대한광통신"},
                 {"Symbol": "196170", "Name": "알테오젠"}
             ])
-
     if not df.empty:
-        # 검색 정확도를 위해 공백 제거 및 대문자화
         df['SearchName'] = df['Name'].str.replace(r'\s+', '', regex=True).str.upper()
     return df
 
-# 데이터 로드 (에러가 나도 빈 객체를 반환하여 다음 코드 실행 보장)
 total_list = get_reliable_stock_list()
 
 # --- 자릿수 정렬 포맷팅 함수 ---
@@ -57,7 +47,6 @@ def format_number(val, is_percent=False):
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_stock_info(ticker_symbol):
     if not ticker_symbol: return None
-    # yfinance는 KRX 서버와 별개이므로 작동 확률이 높음
     for suffix in [".KS", ".KQ"]:
         try:
             stock = yf.Ticker(ticker_symbol + suffix)
@@ -78,7 +67,7 @@ def get_stock_info(ticker_symbol):
     return None
 
 # --- 1. 벤치마크 섹션 ---
-st.header("📋 주요 종목 벤치마크")
+st.header("📋 주요 종목 벤치마크 (시총순 정렬)")
 
 bench_tickers = {
     "삼성전자": "005930", "SK하이닉스": "000660", "현대자동차": "005380",
@@ -88,7 +77,7 @@ bench_tickers = {
 }
 
 bench_results = []
-with st.spinner("야후 파이낸스에서 데이터를 가져오는 중..."):
+with st.spinner("최신 데이터를 불러오는 중..."):
     for name, code in bench_tickers.items():
         res = get_stock_info(code)
         if res:
@@ -96,9 +85,15 @@ with st.spinner("야후 파이낸스에서 데이터를 가져오는 중..."):
             bench_results.append(res)
 
 if bench_results:
-    df_bench = pd.DataFrame(bench_results).set_index('종목명')
+    # 1. 시가총액 데이터프레임 생성
+    df_bench = pd.DataFrame(bench_results)
+    
+    # 2. [핵심] 시가총액(숫자값) 기준 내림차순 정렬
+    df_bench = df_bench.sort_values(by="시총", ascending=False).set_index('종목명')
+    
     disp_df = pd.DataFrame(index=df_bench.index)
     
+    # 정렬된 순서대로 포맷팅 적용
     disp_df['시총'] = df_bench['시총'].apply(format_currency)
     disp_df['매출액'] = df_bench['매출액'].apply(format_currency)
     disp_df['영업이익'] = df_bench['영업이익'].apply(format_currency)
@@ -123,7 +118,6 @@ user_input = st.text_input("종목명 또는 코드 6자리를 입력하세요",
 if user_input:
     target_code = None
     clean_input = user_input.replace(" ", "").upper()
-    
     if clean_input.isdigit() and len(clean_input) == 6:
         target_code = clean_input
     elif not total_list.empty:
@@ -134,10 +128,9 @@ if user_input:
     if target_code:
         col1, col2 = st.columns([1, 1])
         raw_detail = get_stock_info(target_code)
-        
-        with col1:
-            st.subheader("📊 핵심 지표")
-            if raw_detail:
+        if raw_detail:
+            with col1:
+                st.subheader("📊 핵심 지표")
                 detail_data = {
                     "시총": format_currency(raw_detail['시총']),
                     "P/E": format_number(raw_detail['P/E']),
@@ -148,9 +141,7 @@ if user_input:
                     "매출액 성장률(%)": format_number(raw_detail['매출액 성장률'], True),
                     "이익 성장률(%)": format_number(raw_detail['이익 성장률'], True),
                 }
-                st.dataframe(pd.Series(detail_data).to_frame(name="수치"), 
-                             column_config={"수치": st.column_config.Column(alignment="right")},
-                             use_container_width=True)
-        with col2:
-            st.subheader("🔗 링크")
-            st.link_button(f"{user_input} 네이버 증권 ↗", f"https://finance.naver.com/item/main.naver?code={target_code}")
+                st.dataframe(pd.Series(detail_data).to_frame(name="수치"), use_container_width=True)
+            with col2:
+                st.subheader("🔗 링크")
+                st.link_button(f"{user_input} 네이버 증권 ↗", f"https://finance.naver.com/item/main.naver?code={target_code}")
