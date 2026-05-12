@@ -1,5 +1,15 @@
 streamlit
-finance-datareader
-pandas
-beautifulsoup4
-requests
+        yfinance
+        pandas
+        ```
+2.  **Streamlit Cloud 연결:**
+    *   [Streamlit Cloud](https://share.streamlit.io/)에 접속하여 GitHub 계정을 연동합니다.
+    *   **New app**을 클릭하고 방금 만든 리포지토리와 `app.py`를 선택합니다.
+    *   **Deploy!** 버튼을 누르면 나만의 주식 웹페이지 주소가 생성됩니다.
+
+---
+
+### 💡 팁
+*   **데이터 출처:** `yfinance`는 야후 파이낸스 데이터를 가져오므로 한국 거래소 데이터와 약간의 시차(20분 내외)나 항목 차이가 있을 수 있습니다. 
+*   **성장률 데이터:** API에서 직접 제공하지 않는 지표(예: 특정 기간 영업이익 성장률)는 재무제표 데이터를 직접 계산하는 로직을 추가하여 보강할 수 있습니다.
+*   **월봉 차트:** 네이버 금융의 이미지 URL은 별도의 API 키 없이도 종목 코드만 알면 위와 같이 쉽게 호출할 수 있어 편리합니다.
