@@ -3,3 +3,5 @@ pandas
 pykrx
 OpenDartReader
 FinanceDataReader
+requests
+beautifulsoup4
