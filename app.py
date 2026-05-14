@@ -41,7 +41,12 @@ st.title("🏛️ 금감원 DART 공식 데이터 기반 분석")
 target_name = st.text_input("분석할 종목명을 입력하세요", "가온칩스")
 
 # 종목명으로 티커 변환 (pykrx 기능)
-ticker = stock.get_market_ticker_list(market="ALL")
+# 가장 안전하게 최근 영업일 데이터를 가져오도록 날짜를 명시합니다.
+from datetime import datetime, timedelta
+
+# 오늘 날짜를 가져오되, 안전하게 어제 날짜로 설정 (주말/휴일 대비)
+target_date = (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")
+ticker = stock.get_market_ticker_list(date=target_date, market="ALL")
 name_to_ticker = {stock.get_market_ticker_name(t): t for t in ticker}
 
 if target_name in name_to_ticker:
