@@ -5,6 +5,7 @@ from pathlib import Path
 
 import requests
 import streamlit as st
+from bs4 import BeautifulSoup
 
 BENCHMARK_STOCKS = [
     {"code": "005930", "name": "삼성전자"},
