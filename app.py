@@ -1,3 +1,4 @@
+import json
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -19,7 +20,7 @@ BENCHMARK_STOCKS = [
     {"code": "240810", "name": "원익IPS"},
 ]
 
-COMPANY_FILE = Path("krx_list.xls")
+COMPANY_FILE = Path("krx_list.json")
 NAVER_SUMMARY_URL = "https://api.finance.naver.com/service/itemSummary.naver?itemcode={code}"
 NAVER_COMP_URL = (
     "https://navercomp.wisereport.co.kr/v2/company/ajax/cF1001.aspx?"
@@ -45,27 +46,19 @@ def normalize(text: str) -> str:
 @st.cache_data(show_spinner=False)
 def load_companies():
     if not COMPANY_FILE.exists():
-        st.error("krx_list.xls 파일을 찾을 수 없습니다.")
+        st.error("krx_list.json 파일을 찾을 수 없습니다.")
         return []
 
-    html = COMPANY_FILE.read_bytes().decode("euc-kr", errors="ignore")
-    soup = BeautifulSoup(html, "html.parser")
-    rows = soup.select("table.bbs_tb tr")[1:]
-
-    companies = []
-    for row in rows:
-        cells = row.find_all("td")
-        if len(cells) < 3:
-            continue
-        companies.append(
-            {
-                "company_name": cells[0].get_text(strip=True),
-                "market": cells[1].get_text(strip=True),
-                "code": cells[2].get_text(strip=True),
-                "normalized_name": normalize(cells[0].get_text(strip=True)),
-            }
-        )
-    return companies
+    data = json.loads(COMPANY_FILE.read_text(encoding="utf-8"))
+    return [
+        {
+            "company_name": item.get("companyName", ""),
+            "market": item.get("market", ""),
+            "code": item.get("code", ""),
+            "normalized_name": normalize(item.get("companyName", "")),
+        }
+        for item in data
+    ]
 
 
 def search_company(query: str, companies: list[dict]):
